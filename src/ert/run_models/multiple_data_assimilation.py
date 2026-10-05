@@ -28,6 +28,7 @@ from ert.storage.local_experiment import (
     LocalExperiment,
 )
 from ert.trace import tracer
+from ert.validation.rangestring import mask_to_rangestring
 
 from .run_model import ErtRunError
 
@@ -50,22 +51,22 @@ class MultipleDataAssimilation(
         total_iterations = len(self._parsed_weights) + 1
         if self.prior_ensemble_id:
             prior_ensemble = self._storage.get_ensemble(self.prior_ensemble_id)
-            active_indices = [
-                i for i, active in enumerate(self.active_realizations) if active
+            prior_active_mask = prior_ensemble.get_realization_mask_with_parameters()
+            missing_mask = [
+                active
+                and (i >= prior_ensemble.ensemble_size or not prior_active_mask[i])
+                for i, active in enumerate(self.active_realizations)
             ]
-            # active_indices should always be non-empty but we make sure
-            # we only check for mismatch in ensemble_size here.
-            max_index = max(active_indices) if active_indices else -1
-            if max_index >= prior_ensemble.ensemble_size:
+            if any(missing_mask):
                 raise ConfigValidationError(
                     f"Prior ensemble '{prior_ensemble.name}' "
-                    f"(ID: {self.prior_ensemble_id}) has "
-                    f"{prior_ensemble.ensemble_size} realizations, but "
-                    f"realization {max_index} was requested. "
-                    "Realizations beyond the size of the prior ensemble do "
-                    "not exist. Either reduce NUM_REALIZATIONS/the "
-                    "requested realizations, or restart from a prior "
-                    "ensemble with enough realizations."
+                    f"(ID: {self.prior_ensemble_id}) does not have "
+                    f"realization(s) {mask_to_rangestring(missing_mask)}. Only "
+                    f"realizations {mask_to_rangestring(prior_active_mask)} are "
+                    "present in the prior ensemble. Either select "
+                    "realizations that are present in the prior ensemble, "
+                    "or restart from a prior ensemble with the requested "
+                    "realizations."
                 )
             start_iteration = prior_ensemble.iteration + 1
             total_iterations -= start_iteration

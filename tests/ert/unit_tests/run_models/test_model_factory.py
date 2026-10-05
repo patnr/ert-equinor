@@ -3,6 +3,7 @@ from argparse import Namespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid1
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -352,6 +353,9 @@ def test_that_multiple_data_assimilation_runpaths_start_after_prior_iteration(
     ensemble_mock = MagicMock()
     ensemble_mock.iteration = prior_iteration
     ensemble_mock.ensemble_size = 2
+    ensemble_mock.get_realization_mask_with_parameters.return_value = np.array(
+        [True, True]
+    )
     config = ErtConfig(runpath_config=ModelConfig(num_realizations=2))
 
     with patch(
@@ -379,6 +383,9 @@ def test_that_mismatched_prior_ensemble_size_raises_validation_error(monkeypatch
     ensemble_mock.name = "prior_ensemble"
     ensemble_mock.iteration = 0
     ensemble_mock.ensemble_size = 10
+    ensemble_mock.get_realization_mask_with_parameters.return_value = np.array(
+        [True] * 10
+    )
     config = ErtConfig(runpath_config=ModelConfig(num_realizations=20))
 
     with (
@@ -387,8 +394,7 @@ def test_that_mismatched_prior_ensemble_size_raises_validation_error(monkeypatch
         ),
         pytest.raises(
             ValidationError,
-            match=r"Prior ensemble 'prior_ensemble'.*has 10 realizations.*"
-            r"realization 19 was requested",
+            match=r"Prior ensemble 'prior_ensemble'.*does not have realization\(s\)",
         ),
     ):
         model_factory._setup_multiple_data_assimilation(
@@ -413,6 +419,9 @@ def test_that_subset_of_prior_ensemble_realizations_is_accepted(monkeypatch):
     ensemble_mock.name = "prior_ensemble"
     ensemble_mock.iteration = 0
     ensemble_mock.ensemble_size = 20
+    ensemble_mock.get_realization_mask_with_parameters.return_value = np.array(
+        [True] * 20
+    )
     config = ErtConfig(runpath_config=ModelConfig(num_realizations=10))
 
     with patch(
@@ -422,6 +431,41 @@ def test_that_subset_of_prior_ensemble_realizations_is_accepted(monkeypatch):
             config, args, ObservationSettings(), queue.SimpleQueue()
         )
     assert model.ensemble_size == 10
+
+
+@pytest.mark.usefixtures("use_tmpdir")
+def test_that_realizations_outside_prior_active_range_raises_validation_error():
+    """NUM_REALIZATIONS = 30, prior has 10-19 active, selected: 15-25."""
+    args = Namespace(
+        realizations="15-25",
+        weights="2,1",
+        target_ensemble="from_prior_%d",
+        prior_ensemble_id=str(uuid1()),
+        experiment_name="just_assimilatin",
+    )
+
+    ensemble_mock = MagicMock()
+    ensemble_mock.name = "prior_ensemble"
+    ensemble_mock.iteration = 0
+    ensemble_mock.ensemble_size = 30
+    ensemble_mock.get_realization_mask_with_parameters.return_value = np.array(
+        [10 <= i <= 19 for i in range(30)]
+    )
+    config = ErtConfig(runpath_config=ModelConfig(num_realizations=30))
+
+    with (
+        patch(
+            "ert.run_models.run_model.Storage.get_ensemble", return_value=ensemble_mock
+        ),
+        pytest.raises(
+            ValidationError,
+            match=r"does not have realization\(s\) 20-25\. "
+            r"Only realizations 10-19 are present",
+        ),
+    ):
+        model_factory._setup_multiple_data_assimilation(
+            config, args, ObservationSettings(), queue.SimpleQueue()
+        )
 
 
 @pytest.mark.parametrize(
