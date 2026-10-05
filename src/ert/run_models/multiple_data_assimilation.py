@@ -53,6 +53,8 @@ class MultipleDataAssimilation(
             active_indices = [
                 i for i, active in enumerate(self.active_realizations) if active
             ]
+            # active_indices should always be non-empty but we make sure
+            # we only check for mismatch in ensemble_size here.
             max_index = max(active_indices) if active_indices else -1
             if max_index >= prior_ensemble.ensemble_size:
                 raise ConfigValidationError(
