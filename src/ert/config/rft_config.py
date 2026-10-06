@@ -318,7 +318,9 @@ class RFTConfig(SimulationResponseConfig):
             for (well, time), properties in missing_response_properties.items()
         ]
         _warn_about_missing_responses(
-            sorted(formatted_missing_rft_responses), "RFT", rft_filename
+            sorted(formatted_missing_rft_responses),
+            "RFT",
+            rft_filename,
         )
 
     def read_from_file(self, run_path: str, iens: int, iter_: int) -> pl.DataFrame:
